@@ -11,7 +11,7 @@ from src.ai_insights import AIError, CommentAnalysis, GeminiAnalyzer, SpikeExpla
 from src.analysis import add_metrics, channel_baseline, flag_spikes, performance_by, summary_stats
 from src.youtube_client import ChannelNotFoundError, YouTubeAPIError, YouTubeClient
 
-load_dotenv()
+load_dotenv(override=True)  # .env always wins over stale shell variables
 
 
 def get_secret(name: str, default: str | None = None) -> str | None:
