@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from src.ai_insights import AIError, CommentAnalysis, GeminiAnalyzer, SpikeExplanation
 from src.analysis import add_metrics, channel_baseline, flag_spikes, performance_by, summary_stats
-from src.youtube_client import ChannelNotFoundError, YouTubeClient
+from src.youtube_client import ChannelNotFoundError, YouTubeAPIError, YouTubeClient
 
 load_dotenv()
 
@@ -115,7 +115,7 @@ if not channel_input:
 try:
     with st.spinner("Fetching channel data…"):
         channel, videos = load_channel(channel_input, max_videos)
-except (ChannelNotFoundError, ValueError) as e:
+except (ChannelNotFoundError, YouTubeAPIError, ValueError) as e:
     st.error(str(e))
     st.stop()
 
@@ -199,7 +199,7 @@ for _, v in spikes.iterrows():
             b.success(f"**{exp.headline}**")
             b.write(exp.explanation)
             b.markdown(" · ".join(f"`{f}`" for f in exp.key_factors) + f"  \n*Confidence: {exp.confidence}*")
-        except AIError as e:
+        except (AIError, YouTubeAPIError) as e:
             b.error(str(e))
 
 # ---------- AI comment analysis ----------
@@ -221,7 +221,7 @@ else:
             with st.spinner("Reading comments and asking Gemini…"):
                 analysis = ai_comment_analysis(chosen, titles[chosen])
             render_comment_analysis(analysis)
-        except AIError as e:
+        except (AIError, YouTubeAPIError) as e:
             st.error(str(e))
 
 with st.expander("All videos (raw data)"):

@@ -21,6 +21,42 @@ class ChannelNotFoundError(Exception):
     pass
 
 
+class YouTubeAPIError(Exception):
+    """A YouTube API failure, with a message that's safe and useful to show users."""
+
+
+def _error_reasons(e: HttpError) -> set[str]:
+    reasons = set()
+    for d in getattr(e, "error_details", None) or []:
+        if isinstance(d, dict):
+            reasons.update(str(d.get(k, "")) for k in ("reason", "status"))
+    return reasons
+
+
+def _friendly_error(e: HttpError) -> YouTubeAPIError:
+    reasons = _error_reasons(e)
+    text = f"{e.reason or ''} {' '.join(reasons)}"
+    if "keyInvalid" in reasons or "API_KEY_INVALID" in text or "API key not valid" in text:
+        msg = "YouTube rejected the API key. Check YOUTUBE_API_KEY is the current key, copied exactly."
+    elif reasons & {"quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded"}:
+        msg = "The YouTube API daily quota is used up. It resets at midnight Pacific time."
+    elif "accessNotConfigured" in reasons or "SERVICE_DISABLED" in text:
+        msg = "YouTube Data API v3 isn't enabled for this key's Google Cloud project."
+    elif "BLOCKED" in text or "ipRefererBlocked" in reasons:
+        msg = ("This API key's restrictions are blocking the request. In Google Cloud, set the key's "
+               "Application restrictions to None and its API restriction to YouTube Data API v3.")
+    else:
+        msg = f"YouTube API error ({e.status_code}): {e.reason or 'unknown error'}"
+    return YouTubeAPIError(msg)
+
+
+def _execute(request):
+    try:
+        return request.execute()
+    except HttpError as e:
+        raise _friendly_error(e) from e
+
+
 @dataclass
 class ChannelInfo:
     channel_id: str
@@ -71,7 +107,7 @@ class YouTubeClient:
         params = {"part": "snippet,statistics,contentDetails"}
         params["id" if kind == "id" else "forHandle"] = value
 
-        resp = self._yt.channels().list(**params).execute()
+        resp = _execute(self._yt.channels().list(**params))
         items = resp.get("items", [])
         if not items:
             raise ChannelNotFoundError(f"No channel found for '{channel_input}'.")
@@ -97,15 +133,13 @@ class YouTubeClient:
         video_ids: list[str] = []
         page_token = None
         while len(video_ids) < max_videos:
-            resp = (
-                self._yt.playlistItems()
-                .list(
+            resp = _execute(
+                self._yt.playlistItems().list(
                     part="contentDetails",
                     playlistId=channel.uploads_playlist_id,
                     maxResults=min(50, max_videos - len(video_ids)),
                     pageToken=page_token,
                 )
-                .execute()
             )
             video_ids += [i["contentDetails"]["videoId"] for i in resp.get("items", [])]
             page_token = resp.get("nextPageToken")
@@ -115,10 +149,8 @@ class YouTubeClient:
         rows = []
         for start in range(0, len(video_ids), 50):  # videos.list takes up to 50 IDs
             batch = video_ids[start : start + 50]
-            resp = (
-                self._yt.videos()
-                .list(part="snippet,statistics,contentDetails", id=",".join(batch))
-                .execute()
+            resp = _execute(
+                self._yt.videos().list(part="snippet,statistics,contentDetails", id=",".join(batch))
             )
             for v in resp.get("items", []):
                 s = v.get("statistics", {})
@@ -171,7 +203,7 @@ class YouTubeClient:
                 if not page_token:
                     break
         except HttpError as e:
-            if e.resp.status == 403:  # comments disabled on this video
+            if "commentsDisabled" in _error_reasons(e):
                 return []
-            raise
+            raise _friendly_error(e) from e
         return comments
