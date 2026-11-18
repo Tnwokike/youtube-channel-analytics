@@ -43,6 +43,23 @@ def summary_stats(df: pd.DataFrame) -> dict:
     }
 
 
+def channel_baseline(df: pd.DataFrame, channel_title: str, n_titles: int = 8) -> dict:
+    """What a 'typical' video looks like on this channel, used as context for the AI."""
+    typical = df[~df["is_spike"]]
+    if typical.empty:
+        typical = df
+    # Titles of the videos closest to the median view count = most representative.
+    median = df["views"].median()
+    closest = typical.assign(_dist=(typical["views"] - median).abs()).nsmallest(n_titles, "_dist")
+    return {
+        "channel_title": channel_title,
+        "median_views": int(median),
+        "median_minutes": float(df["duration_sec"].median() / 60),
+        "avg_engagement": float(df["engagement_rate"].mean()),
+        "typical_titles": closest["title"].tolist(),
+    }
+
+
 def performance_by(df: pd.DataFrame, column: str) -> pd.DataFrame:
     """Median views and engagement grouped by a column (e.g. weekday, is_short)."""
     return (

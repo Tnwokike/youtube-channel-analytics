@@ -6,9 +6,11 @@ A Streamlit dashboard that analyses any public YouTube channel: growth and engag
 - Channel lookup by URL, `@handle`, or channel ID
 - Engagement rate per video, Shorts vs long-form comparison, performance by upload day
 - **Breakout detection**: flags videos that beat the channel's *median* views by a configurable multiple (median, not mean, so one viral hit doesn't hide the others)
+- **AI breakout explanations** (Gemini): compares a breakout video to the channel's typical videos and explains why it likely took off
+- **AI comment analysis** (Gemini): sentiment split, recurring themes with real example comments, and what viewers are asking for next
 
 ## Tech
-Python · Streamlit · YouTube Data API v3 · pandas · Plotly
+Python · Streamlit · YouTube Data API v3 · Gemini API (structured JSON output via Pydantic) · pandas · Plotly
 
 ## Running locally
 ```bash
@@ -21,3 +23,5 @@ streamlit run app.py
 
 ## Notes on API quota
 The YouTube Data API gives 10,000 units/day. This app avoids `search.list` (100 units per call) and reads each channel's uploads playlist instead (1 unit per call). Results are cached for an hour, so reloading a channel costs nothing.
+
+AI results are cached for 24 hours per video, so each video costs at most one Gemini call per day.
