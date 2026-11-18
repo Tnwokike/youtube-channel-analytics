@@ -62,7 +62,7 @@ def parse_channel_input(text: str) -> tuple[str, str]:
 class YouTubeClient:
     def __init__(self, api_key: str):
         if not api_key:
-            raise ValueError("Missing YOUTUBE_API_KEY. Add it to your .env file.")
+            raise ValueError("Missing YOUTUBE_API_KEY. Add it to .env (local) or the app's Secrets settings (Streamlit Cloud).")
         self._yt = build("youtube", "v3", developerKey=api_key, cache_discovery=False)
 
     # ---------- channel ----------

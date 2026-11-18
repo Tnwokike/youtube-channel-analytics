@@ -106,7 +106,7 @@ def build_spike_prompt(video: dict, baseline: dict, comments: list[str]) -> str:
 class GeminiAnalyzer:
     def __init__(self, api_key: str, model: str | None = None):
         if not api_key:
-            raise AIError("Missing GEMINI_API_KEY. Add it to your .env file to enable AI insights.")
+            raise AIError("Missing GEMINI_API_KEY. Add it to .env (local) or the app's Secrets settings (Streamlit Cloud) to enable AI insights.")
         self._client = genai.Client(api_key=api_key)
         self.model = model or DEFAULT_MODEL
 
