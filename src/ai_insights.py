@@ -15,7 +15,9 @@ from google import genai
 from google.genai import errors, types
 from pydantic import BaseModel, Field
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.5-flash"
+# Tried in order if the main model is overloaded (503) or retired (404).
+FALLBACK_MODELS = ["gemini-3.5-flash-lite"]
 MAX_COMMENT_CHARS = 300   # long comments get truncated
 MAX_COMMENTS = 100
 
@@ -107,40 +109,52 @@ class GeminiAnalyzer:
     def __init__(self, api_key: str, model: str | None = None):
         if not api_key:
             raise AIError("Missing GEMINI_API_KEY. Add it to .env (local) or the app's Secrets settings (Streamlit Cloud) to enable AI insights.")
-        self._client = genai.Client(api_key=api_key)
+        # 45s limit per request so a slow model fails over instead of hanging the app.
+        self._client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=45_000))
         self.model = model or DEFAULT_MODEL
 
-    def _generate(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
-        try:
-            resp = self._client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=(
-                        "You are a sharp YouTube analytics assistant. You write concise, "
-                        "specific, evidence-based insights for content strategists."
-                    ),
-                    response_mime_type="application/json",
-                    response_schema=schema,
-                    temperature=0.3,  # low = more consistent, factual output
-                ),
-            )
-        except errors.ClientError as e:
-            if e.code == 429:
-                raise AIError("Gemini rate limit reached. Wait a minute and try again.") from e
-            if e.code in (400, 401, 403) and "API key" in str(e):
-                raise AIError("Gemini rejected the API key. Check GEMINI_API_KEY in .env.") from e
-            if e.code == 404:
-                raise AIError(
-                    f"Model '{self.model}' isn't available. Set GEMINI_MODEL in .env to a current model."
-                ) from e
-            raise AIError(f"Gemini request failed: {e.message or e}") from e
-        except errors.ServerError as e:
-            raise AIError("Gemini is temporarily unavailable. Try again shortly.") from e
+    def _models_to_try(self) -> list[str]:
+        return [self.model] + [m for m in FALLBACK_MODELS if m != self.model]
 
-        if not resp.text:
-            raise AIError("Gemini returned an empty response (it may have been blocked by safety filters).")
-        return schema.model_validate_json(resp.text)
+    def _generate(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
+        config = types.GenerateContentConfig(
+            system_instruction=(
+                "You are a sharp YouTube analytics assistant. You write concise, "
+                "specific, evidence-based insights for content strategists."
+            ),
+            response_mime_type="application/json",
+            response_schema=schema,
+            temperature=0.3,  # low = more consistent, factual output
+        )
+        last_error: AIError | None = None
+        for model in self._models_to_try():
+            try:
+                resp = self._client.models.generate_content(model=model, contents=prompt, config=config)
+            except errors.ClientError as e:
+                if e.code == 404:  # model retired -> try the next one
+                    last_error = AIError(
+                        f"Model '{model}' isn't available. Set GEMINI_MODEL to a current model."
+                    )
+                    continue
+                if e.code == 429:
+                    raise AIError("Gemini rate limit reached. Wait a minute and try again.") from e
+                if e.code in (400, 401, 403) and "API key" in str(e):
+                    raise AIError("Gemini rejected the API key. Check GEMINI_API_KEY.") from e
+                raise AIError(f"Gemini request failed: {e.message or e}") from e
+            except errors.ServerError:  # overloaded -> try the next one
+                last_error = AIError("Gemini is busy right now. Try again in a moment.")
+                continue
+            except Exception as e:  # network timeout etc. -> try the next one
+                if "timeout" not in type(e).__name__.lower() and "timed out" not in str(e).lower():
+                    raise
+                last_error = AIError("Gemini took too long to respond. Try again in a moment.")
+                continue
+
+            if not resp.text:
+                raise AIError("Gemini returned an empty response (it may have been blocked by safety filters).")
+            return schema.model_validate_json(resp.text)
+
+        raise last_error or AIError("Gemini request failed.")
 
     def analyze_comments(self, video_title: str, comments: list[str]) -> CommentAnalysis:
         if not comments:
