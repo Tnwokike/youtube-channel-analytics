@@ -12,12 +12,22 @@ from src.analysis import add_metrics, channel_baseline, flag_spikes, performance
 from src.youtube_client import ChannelNotFoundError, YouTubeClient
 
 load_dotenv()
+
+
+def get_secret(name: str, default: str | None = None) -> str | None:
+    """Read a key from Streamlit secrets (when deployed) or .env / environment (locally)."""
+    try:
+        if name in st.secrets:
+            return str(st.secrets[name])
+    except Exception:  # no secrets.toml locally -> fall back to env vars
+        pass
+    return os.getenv(name, default)
 st.set_page_config(page_title="YouTube Channel Analytics", page_icon="📊", layout="wide")
 
 
 @st.cache_resource
 def get_client() -> YouTubeClient:
-    return YouTubeClient(os.getenv("YOUTUBE_API_KEY", ""))
+    return YouTubeClient(get_secret("YOUTUBE_API_KEY", ""))
 
 
 # Cache API results for an hour so re-running the same channel costs no quota.
@@ -36,7 +46,7 @@ def load_comments(video_id: str) -> list[str]:
 
 @st.cache_resource
 def get_analyzer() -> GeminiAnalyzer:
-    return GeminiAnalyzer(os.getenv("GEMINI_API_KEY", ""), os.getenv("GEMINI_MODEL"))
+    return GeminiAnalyzer(get_secret("GEMINI_API_KEY", ""), get_secret("GEMINI_MODEL"))
 
 
 # AI results are cached for a day: the same video never costs a second Gemini call.
