@@ -36,7 +36,10 @@ def _error_reasons(e: HttpError) -> set[str]:
 def _friendly_error(e: HttpError) -> YouTubeAPIError:
     reasons = _error_reasons(e)
     text = f"{e.reason or ''} {' '.join(reasons)}"
-    if "keyInvalid" in reasons or "API_KEY_INVALID" in text or "API key not valid" in text:
+    if "API keys are not supported" in text:
+        msg = ("YOUTUBE_API_KEY looks like a service-account-bound key (e.g. your Gemini key). "
+               "Use the key restricted to YouTube Data API v3 instead.")
+    elif "keyInvalid" in reasons or "API_KEY_INVALID" in text or "API key not valid" in text:
         msg = "YouTube rejected the API key. Check YOUTUBE_API_KEY is the current key, copied exactly."
     elif reasons & {"quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded"}:
         msg = "The YouTube API daily quota is used up. It resets at midnight Pacific time."
