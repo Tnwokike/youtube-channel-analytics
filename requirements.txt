@@ -1,0 +1,6 @@
+streamlit>=1.38
+google-api-python-client>=2.140
+pandas>=2.2
+plotly>=5.24
+python-dotenv>=1.0
+isodate>=0.7
